@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 
-function AuditPanel() {
+const ACTION_LABELS = {
+  create: "registered",
+  update: "edited",
+  verify: "verified",
+};
+
+function AuditPanel({ refreshKey = 0 }) {
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState("");
 
@@ -19,7 +25,7 @@ function AuditPanel() {
       }
     };
     load();
-  }, []);
+  }, [refreshKey]);
 
   return (
     <section className="panel" style={{ marginTop: 24 }}>
@@ -31,7 +37,7 @@ function AuditPanel() {
           <li key={e.id} className="patient-row">
             <div className="patient-info">
               <strong>
-                {e.user_name} · {e.action} {e.entity}
+                {e.user_name} · {ACTION_LABELS[e.action] || e.action} {e.entity}
                 {e.patient_name ? ` (${e.patient_name})` : ""}
               </strong>
               <span style={{ textTransform: "none" }}>

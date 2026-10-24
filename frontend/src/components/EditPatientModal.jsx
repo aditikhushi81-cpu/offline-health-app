@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { updatePatientLocal, syncNow } from "../db";
+import { validatePatient } from "../validation";
 
 function EditPatientModal({ patient, onClose }) {
   const [form, setForm] = useState({
@@ -9,38 +10,44 @@ function EditPatientModal({ patient, onClose }) {
     phone: patient.phone || "",
   });
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
+  const update = (field) => (e) => {
+    setForm({ ...form, [field]: e.target.value });
+    if (fieldErrors[field]) setFieldErrors({ ...fieldErrors, [field]: "" });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    if (form.name.trim().length < 2) {
-      setError("Please enter the patient's full name.");
-      return;
-    }
-    if (new Date(form.dob) > new Date()) {
-      setError("Date of birth cannot be in the future.");
-      return;
-    }
-    if (form.phone && !/^[0-9+\-\s]{7,15}$/.test(form.phone.trim())) {
-      setError("Please enter a valid phone number.");
-      return;
-    }
+    const cleaned = {
+      ...form,
+      name: form.name.trim().replace(/\s+/g, " "),
+      phone: form.phone.trim(),
+    };
 
-    // Send only what actually changed
+    // Work out what actually changed
     const changes = {};
-    if (form.name.trim() !== patient.name) changes.name = form.name.trim();
-    if (form.dob !== patient.dob) changes.dob = form.dob;
-    if (form.gender !== patient.gender) changes.gender = form.gender;
-    if (form.phone.trim() !== (patient.phone || "")) changes.phone = form.phone.trim();
+    if (cleaned.name !== patient.name) changes.name = cleaned.name;
+    if (cleaned.dob !== patient.dob) changes.dob = cleaned.dob;
+    if (cleaned.gender !== patient.gender) changes.gender = cleaned.gender;
+    if (cleaned.phone !== (patient.phone || "")) changes.phone = cleaned.phone;
 
     if (Object.keys(changes).length === 0) {
       onClose();
       return;
     }
+
+    // Validate only the fields that changed (old records may predate these rules)
+    const allErrors = validatePatient(cleaned);
+    const errors = {};
+    for (const field of Object.keys(allErrors)) {
+      if (field in changes) errors[field] = allErrors[field];
+    }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     setSaving(true);
     try {
@@ -55,6 +62,9 @@ function EditPatientModal({ patient, onClose }) {
     }
   };
 
+  const today = new Date().toISOString().split("T")[0];
+  const errStyle = { color: "#b91c1c", fontSize: "0.85rem", marginTop: 4 };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -65,20 +75,22 @@ function EditPatientModal({ patient, onClose }) {
 
         {error && <div className="error-box">{error}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <label htmlFor="e-name">Full name</label>
             <div className="input-wrap">
-              <input id="e-name" className="plain" value={form.name} onChange={update("name")} required />
+              <input id="e-name" className="plain" value={form.name} onChange={update("name")} />
             </div>
+            {fieldErrors.name && <div style={errStyle}>{fieldErrors.name}</div>}
           </div>
 
           <div className="row-2">
             <div className="field">
               <label htmlFor="e-dob">Date of birth</label>
               <div className="input-wrap">
-                <input id="e-dob" className="plain" type="date" value={form.dob} onChange={update("dob")} required />
+                <input id="e-dob" className="plain" type="date" max={today} value={form.dob} onChange={update("dob")} />
               </div>
+              {fieldErrors.dob && <div style={errStyle}>{fieldErrors.dob}</div>}
             </div>
             <div className="field">
               <label htmlFor="e-gender">Gender</label>
@@ -95,8 +107,9 @@ function EditPatientModal({ patient, onClose }) {
           <div className="field">
             <label htmlFor="e-phone">Phone (optional)</label>
             <div className="input-wrap">
-              <input id="e-phone" className="plain" value={form.phone} onChange={update("phone")} />
+              <input id="e-phone" className="plain" type="tel" inputMode="numeric" value={form.phone} onChange={update("phone")} placeholder="e.g. 9876543210" />
             </div>
+            {fieldErrors.phone && <div style={errStyle}>{fieldErrors.phone}</div>}
           </div>
 
           <div className="modal-actions">

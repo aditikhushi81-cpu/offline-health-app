@@ -1,14 +1,25 @@
 import { useLiveQuery } from "dexie-react-hooks";
-
-import AddPatientModal from "../components/AddPatientModal";
 import { useState, useEffect } from "react";
 
+import AddPatientModal from "../components/AddPatientModal";
 import { LogoIcon } from "../components/AuthLayout";
-import { db, syncNow, pullNow, checkServer } from "../db";
+import { db, syncNow, pullNow, checkServer, verifyPatientRemote } from "../db";
 import useConnection from "../useConnection";
 import VitalsModal from "../components/VitalsModal";
 import EditPatientModal from "../components/EditPatientModal";
 import AuditPanel from "../components/AuditPanel";
+
+const badgeBase = {
+    display: "inline-block",
+    marginLeft: 8,
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: "0.72rem",
+    fontWeight: 600,
+    verticalAlign: "middle",
+};
+const verifiedBadge = { ...badgeBase, background: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
+const unverifiedBadge = { ...badgeBase, background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" };
 
 function Dashboard({ user, onLogout }) {
     const isOnline = useConnection();
@@ -19,6 +30,10 @@ function Dashboard({ user, onLogout }) {
     const [editing, setEditing] = useState(null);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
+    const [verifyingId, setVerifyingId] = useState(null);
+    const [verifyMsg, setVerifyMsg] = useState("");
+    const [auditKey, setAuditKey] = useState(0);
+
     const vitalsList = useLiveQuery(() => db.vitals.orderBy("recordedAt").reverse().toArray(), []) || [];
     const latestVitals = (patientId) => vitalsList.find((v) => v.patientId === patientId);
     const patients = useLiveQuery(() => db.patients.orderBy("updatedAt").reverse().toArray(), []) || [];
@@ -28,6 +43,7 @@ function Dashboard({ user, onLogout }) {
         const years = Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000);
         return years;
     };
+
     const visiblePatients = patients.filter((p) => {
         const q = search.trim().toLowerCase();
         const matches =
@@ -38,8 +54,6 @@ function Dashboard({ user, onLogout }) {
         return matches && passes;
     });
 
-
-    // Auto-sync: on open, when the connection returns, and every 30 seconds
     // Auto-sync whenever the server becomes reachable, then every 30 seconds
     useEffect(() => {
         if (!isOnline) return;
@@ -70,6 +84,24 @@ function Dashboard({ user, onLogout }) {
                 : left + " item(s) still waiting. Will retry automatically."
         );
         setSyncing(false);
+    };
+
+    const handleVerify = async (patient) => {
+        setVerifyMsg("");
+        if (!isOnline) {
+            setVerifyMsg("Verification needs an internet connection.");
+            return;
+        }
+        setVerifyingId(patient.id);
+        const result = await verifyPatientRemote(patient.id);
+        if (result.ok) {
+            await pullNow(); // brings the new Verified status into this device
+            setAuditKey((k) => k + 1); // reloads Recent activity
+            setVerifyMsg(`${patient.name} marked as verified.`);
+        } else {
+            setVerifyMsg(result.message);
+        }
+        setVerifyingId(null);
     };
 
     const roleLabel = user.role === "doctor" ? "Doctor" : "Nurse / Health worker";
@@ -162,6 +194,9 @@ function Dashboard({ user, onLogout }) {
                             </button>
                         </div>
                     </div>
+
+                    {verifyMsg && <p className="sync-msg" style={{ margin: "8px 0" }}>{verifyMsg}</p>}
+
                     {patients.length === 0 ? (
                         <div className="empty-state">
                             <div className="empty-icon">+</div>
@@ -173,45 +208,74 @@ function Dashboard({ user, onLogout }) {
                         </div>
                     ) : (
                         <>
-                        <ul className="patient-list">
-                            {visiblePatients.map((p) => (
-                                <li key={p.id} className="patient-row">
-                                    <div className="avatar small">{p.name.charAt(0).toUpperCase()}</div>
-                                    <div className="patient-info">
-                                        <strong>{p.name}</strong>
-                                        <span>
-                                            {ageOf(p.dob)} yrs · {p.gender}
-                                            {p.phone ? ` · ${p.phone}` : ""}
-                                        </span>
-                                        {latestVitals(p.id) && (
-                                            <span className="vitals-line">
-                                                {latestVitals(p.id).bloodPressure && `BP ${latestVitals(p.id).bloodPressure}`}
-                                                {latestVitals(p.id).temperature != null && ` · ${latestVitals(p.id).temperature}°C`}
-                                                {latestVitals(p.id).pulse != null && ` · ${latestVitals(p.id).pulse} bpm`}
-                                                {latestVitals(p.id).weight != null && ` · ${latestVitals(p.id).weight} kg`}
+                            <ul className="patient-list">
+                                {visiblePatients.map((p) => {
+                                    const isVerified = p.verificationStatus === "verified";
+                                    const canVerify =
+                                        user.role === "doctor" && !isVerified && p.isSynced;
+                                    return (
+                                        <li key={p.id} className="patient-row">
+                                            <div className="avatar small">{p.name.charAt(0).toUpperCase()}</div>
+                                            <div className="patient-info">
+                                                <strong>
+                                                    {p.name}
+                                                    <span
+                                                        style={isVerified ? verifiedBadge : unverifiedBadge}
+                                                        title={
+                                                            isVerified && p.verifiedAt
+                                                                ? "Verified on " + new Date(p.verifiedAt).toLocaleString()
+                                                                : "Not yet verified by a doctor"
+                                                        }
+                                                    >
+                                                        {isVerified ? "Verified" : "Unverified"}
+                                                    </span>
+                                                </strong>
+                                                <span>
+                                                    {ageOf(p.dob)} yrs · {p.gender}
+                                                    {p.phone ? ` · ${p.phone}` : ""}
+                                                </span>
+                                                {latestVitals(p.id) && (
+                                                    <span className="vitals-line">
+                                                        {latestVitals(p.id).bloodPressure && `BP ${latestVitals(p.id).bloodPressure}`}
+                                                        {latestVitals(p.id).temperature != null && ` · ${latestVitals(p.id).temperature}°C`}
+                                                        {latestVitals(p.id).pulse != null && ` · ${latestVitals(p.id).pulse} bpm`}
+                                                        {latestVitals(p.id).weight != null && ` · ${latestVitals(p.id).weight} kg`}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {canVerify && (
+                                                <button
+                                                    className="btn-vitals"
+                                                    onClick={() => handleVerify(p)}
+                                                    disabled={verifyingId === p.id || !isOnline}
+                                                    title={isOnline ? "Mark as verified after checking in person or against an ID" : "Needs an internet connection"}
+                                                >
+                                                    {verifyingId === p.id ? "Verifying..." : "Mark verified"}
+                                                </button>
+                                            )}
+                                            <button className="btn-vitals" onClick={() => setEditing(p)}>Edit</button>
+                                            <button className="btn-vitals" onClick={() => setVitalsFor(p)}>Record vitals</button>
+                                            <span className={`sync-pill ${p.isSynced ? "synced" : "pending"}`}>
+                                                {p.isSynced ? "Synced" : "Waiting to sync"}
                                             </span>
-                                        )}
-                                    </div>
-                                    <button className="btn-vitals" onClick={() => setEditing(p)}>Edit</button>
-                                    <button className="btn-vitals" onClick={() => setVitalsFor(p)}>Record vitals</button>
-                                    <span className={`sync-pill ${p.isSynced ? "synced" : "pending"}`}>
-                                        {p.isSynced ? "Synced" : "Waiting to sync"}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                        {visiblePatients.length === 0 && (
-                        <p className="no-results">No patients match your search.</p>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                            {visiblePatients.length === 0 && (
+                                <p className="no-results">No patients match your search.</p>
+                            )}
+                        </>
                     )}
-                </>
-                    )}
-            </section>
-            {user.role === "doctor" && <AuditPanel />}
-        </main>
-            { showAdd && <AddPatientModal user={user} onClose={() => setShowAdd(false)} /> }
-    { vitalsFor && <VitalsModal patient={vitalsFor} user={user} onClose={() => setVitalsFor(null)} /> }
-    { editing && <EditPatientModal patient={editing} onClose={() => setEditing(null)} /> }
-        </div >
+                </section>
+
+                {user.role === "doctor" && <AuditPanel refreshKey={auditKey} />}
+            </main>
+
+            {showAdd && <AddPatientModal user={user} onClose={() => setShowAdd(false)} />}
+            {vitalsFor && <VitalsModal patient={vitalsFor} user={user} onClose={() => setVitalsFor(null)} />}
+            {editing && <EditPatientModal patient={editing} onClose={() => setEditing(null)} />}
+        </div>
     );
 }
 

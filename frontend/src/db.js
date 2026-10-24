@@ -8,6 +8,35 @@ db.version(1).stores({
     syncOutbox: "id, createdAt, type",
 });
 
+// Version 2: adds verification status. The new fields are not indexed,
+// so the table definitions stay the same; the upgrade fills old records.
+db.version(2)
+    .stores({
+        patients: "id, name, updatedAt, isSynced",
+        vitals: "id, patientId, recordedAt, isSynced",
+        syncOutbox: "id, createdAt, type",
+    })
+    .upgrade((tx) =>
+        tx.table("patients").toCollection().modify((p) => {
+            if (!p.verificationStatus) p.verificationStatus = "unverified";
+            if (p.verifiedBy === undefined) p.verifiedBy = null;
+            if (p.verifiedAt === undefined) p.verifiedAt = null;
+        })
+    );
+
+// Turns a date from the server (like "1990-05-09T18:30:00.000Z") into the correct
+// local calendar day "YYYY-MM-DD". Plain "YYYY-MM-DD" values are returned unchanged.
+function normalizeDob(value) {
+    const text = String(value || "");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const d = new Date(text);
+    if (Number.isNaN(d.getTime())) return text.slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
 // Save a patient locally AND queue it for syncing, in one safe transaction
 export async function addPatientLocal(data, userId) {
     const now = new Date().toISOString();
@@ -21,6 +50,9 @@ export async function addPatientLocal(data, userId) {
         createdAt: now,
         updatedAt: now,
         isSynced: false,
+        verificationStatus: "unverified",
+        verifiedBy: null,
+        verifiedAt: null,
     };
 
     await db.transaction("rw", db.patients, db.syncOutbox, async () => {
@@ -36,6 +68,25 @@ export async function addPatientLocal(data, userId) {
 
     return patient;
 }
+
+// Looks for an existing patient on this device with the same name + date of birth + phone.
+// Name is compared ignoring upper/lower case and extra spaces. Works fully offline.
+export async function findDuplicatePatient({ name, dob, phone }) {
+    const cleanName = String(name || "").trim().replace(/\s+/g, " ");
+    const cleanPhone = String(phone || "").trim();
+    const cleanDob = normalizeDob(dob);
+
+    const sameName = await db.patients.where("name").equalsIgnoreCase(cleanName).toArray();
+
+    return (
+        sameName.find(
+            (p) =>
+                normalizeDob(p.dob) === cleanDob &&
+                String(p.phone || "").trim() === cleanPhone
+        ) || null
+    );
+}
+
 export async function addVitalsLocal(patientId, data, userId) {
     const now = new Date().toISOString();
     const vital = {
@@ -65,6 +116,7 @@ export async function addVitalsLocal(patientId, data, userId) {
 
     return vital;
 }
+
 // Saves an edit locally and queues ONLY the changed fields for syncing
 export async function updatePatientLocal(id, changes) {
     const now = new Date().toISOString();
@@ -80,6 +132,7 @@ export async function updatePatientLocal(id, changes) {
         });
     });
 }
+
 const API_URL = "http://localhost:5000/api";
 let syncing = false;
 
@@ -139,6 +192,7 @@ export async function syncNow() {
         syncing = false;
     }
 }
+
 // Sends one batch. Returns the confirmed ids, or null if it failed / not logged in.
 async function sendBatch(path, key, tasks, token) {
     const res = await fetch(`${API_URL}${path}`, {
@@ -154,6 +208,7 @@ async function sendBatch(path, key, tasks, token) {
     const data = await res.json();
     return data.syncedIds;
 }
+
 // Downloads records from the server and merges them into the local database.
 export async function pullNow() {
     if (!navigator.onLine) return;
@@ -176,13 +231,16 @@ export async function pullNow() {
                 await db.patients.put({
                     id: p.id,
                     name: p.name,
-                    dob: String(p.dob).slice(0, 10),
+                    dob: normalizeDob(p.dob),
                     gender: p.gender,
                     phone: p.phone || "",
                     createdBy: p.created_by,
                     createdAt: p.created_at,
                     updatedAt: p.updated_at,
                     isSynced: true,
+                    verificationStatus: p.verification_status || "unverified",
+                    verifiedBy: p.verified_by || null,
+                    verifiedAt: p.verified_at || null,
                 });
             }
             for (const v of vitals) {
@@ -206,6 +264,7 @@ export async function pullNow() {
         console.warn("Pull failed, will retry:", err.message);
     }
 }
+
 // Returns true only if the server really answers (not just "device has network")
 export async function checkServer() {
     if (!navigator.onLine) return false;
@@ -221,5 +280,23 @@ export async function checkServer() {
         return false;
     } finally {
         clearTimeout(timer);
+    }
+}
+
+// Asks the server to mark a patient as verified (doctors only, needs internet).
+// Returns { ok: true } or { ok: false, message }.
+export async function verifyPatientRemote(id) {
+    const token = localStorage.getItem("token");
+    if (!token) return { ok: false, message: "Please log in again." };
+    try {
+        const res = await fetch(`${API_URL}/sync/patients/${id}/verify`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, message: data.message || "Could not verify the patient." };
+        return { ok: true };
+    } catch {
+        return { ok: false, message: "Verification needs an internet connection." };
     }
 }
