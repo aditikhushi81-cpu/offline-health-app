@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 
 import AddPatientModal from "../components/AddPatientModal";
 import { LogoIcon } from "../components/AuthLayout";
-import { db, syncNow, pullNow, checkServer, verifyPatientRemote } from "../db";
+import { db, syncNow, pullNow, checkServer, verifyPatientRemote, buildPatientsCsv } from "../db";
+import { downloadCsv } from "../csv";
 import useConnection from "../useConnection";
 import VitalsModal from "../components/VitalsModal";
 import EditPatientModal from "../components/EditPatientModal";
@@ -30,6 +31,8 @@ function Dashboard({ user, onLogout }) {
     const [vitalsFor, setVitalsFor] = useState(null);
     const [editing, setEditing] = useState(null);
     const [transferFor, setTransferFor] = useState(null);
+    const [showExport, setShowExport] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
     const [verifyingId, setVerifyingId] = useState(null);
@@ -115,9 +118,28 @@ function Dashboard({ user, onLogout }) {
 
     const handleTransferDone = async (message) => {
         setTransferFor(null);
-        await pullNow(); // the patient is no longer sent to this doctor, so it disappears locally
+        await pullNow();
         setAuditKey((k) => k + 1);
         setVerifyMsg(message);
+    };
+
+    // Builds the CSV from IndexedDB (no internet needed) and downloads it
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const { csv, count } = await buildPatientsCsv(user.id);
+            const d = new Date();
+            const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            downloadCsv(`patients-${stamp}.csv`, csv);
+            setVerifyMsg(`Exported ${count} patient(s). Keep the file safe and delete it after use.`);
+            setShowExport(false);
+        } catch (err) {
+            console.error(err);
+            setVerifyMsg("Could not create the export file.");
+            setShowExport(false);
+        } finally {
+            setExporting(false);
+        }
     };
 
     const roleLabel = user.role === "doctor" ? "Doctor" : "Nurse / Health worker";
@@ -159,9 +181,14 @@ function Dashboard({ user, onLogout }) {
                                 : "Here's an overview of your patient records."}
                         </p>
                     </div>
-                    <button className="btn-add" onClick={() => setShowAdd(true)}>
-                        + Add patient
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="btn-secondary" onClick={() => setShowExport(true)}>
+                            Export CSV
+                        </button>
+                        <button className="btn-add" onClick={() => setShowAdd(true)}>
+                            + Add patient
+                        </button>
+                    </div>
                 </div>
 
                 <div className="stats">
@@ -311,6 +338,42 @@ function Dashboard({ user, onLogout }) {
                     onClose={() => setTransferFor(null)}
                     onDone={handleTransferDone}
                 />
+            )}
+            {showExport && (
+                <div className="modal-backdrop" onClick={() => setShowExport(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-head">
+                            <h2>Export CSV</h2>
+                            <button type="button" className="modal-x" onClick={() => setShowExport(false)} aria-label="Close">×</button>
+                        </div>
+                        <div
+                            style={{
+                                background: "#fef3c7",
+                                border: "1px solid #f59e0b",
+                                color: "#92400e",
+                                borderRadius: 8,
+                                padding: "10px 12px",
+                                marginBottom: 12,
+                                fontSize: "0.9rem",
+                            }}
+                        >
+                            <strong>Warning: sensitive health data.</strong>
+                            <div style={{ marginTop: 6 }}>
+                                This file is <strong>not encrypted</strong>. Keep it in a safe place,
+                                do not share it, and delete it after use.
+                            </div>
+                        </div>
+                        <p style={{ margin: "0 0 12px" }}>
+                            It contains only the records you can see, taken from this device, and works without internet.
+                        </p>
+                        <div className="modal-actions">
+                            <button type="button" className="btn-secondary" onClick={() => setShowExport(false)}>Cancel</button>
+                            <button type="button" className="btn-primary" disabled={exporting} onClick={handleExport}>
+                                {exporting ? "Preparing..." : "I understand, download"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

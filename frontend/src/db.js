@@ -1,5 +1,5 @@
 import Dexie from "dexie";
-
+import { buildCsv } from "./csv";
 export const db = new Dexie("ruralHealthDB");
 
 db.version(1).stores({
@@ -360,4 +360,56 @@ export async function verifyPatientRemote(id) {
     } catch {
         return { ok: false, message: "Verification needs an internet connection." };
     }
+}
+
+// Builds the CSV text for all patients on this device (works offline).
+// Each patient gets one row with their latest vitals.
+export async function buildPatientsCsv(currentUserId) {
+    const patients = await db.patients.orderBy("name").toArray();
+    const vitals = await db.vitals.toArray();
+    const doctors = await db.doctors.toArray();
+
+    const doctorName = (id) => {
+        if (!id) return "Not assigned";
+        const d = doctors.find((x) => x.id === id);
+        return d ? d.name : "Unknown doctor";
+    };
+
+    // Latest vitals per patient
+    const latest = {};
+    for (const v of vitals) {
+        const current = latest[v.patientId];
+        if (!current || v.recordedAt > current.recordedAt) latest[v.patientId] = v;
+    }
+
+    // Only records this user may see: their own, or assigned to them
+    const visible = patients.filter(
+        (p) => p.createdBy === currentUserId || p.assignedDoctorId === currentUserId
+    );
+
+    const headers = [
+        "Name", "Date of Birth", "Gender", "Phone", "Verification Status",
+        "Assigned Doctor", "Blood Pressure", "Temperature", "Pulse", "Weight",
+        "Notes", "Sync Status",
+    ];
+
+    const rows = visible.map((p) => {
+        const v = latest[p.id];
+        return [
+            p.name,
+            p.dob,
+            p.gender,
+            p.phone || "",
+            p.verificationStatus === "verified" ? "Verified" : "Unverified",
+            doctorName(p.assignedDoctorId),
+            v ? v.bloodPressure : "",
+            v && v.temperature != null ? v.temperature : "",
+            v && v.pulse != null ? v.pulse : "",
+            v && v.weight != null ? v.weight : "",
+            v ? v.notes : "",
+            p.isSynced ? "Synced" : "Waiting to sync",
+        ];
+    });
+
+    return { csv: buildCsv(headers, rows), count: rows.length };
 }
