@@ -10,6 +10,7 @@ import VitalsModal from "../components/VitalsModal";
 import EditPatientModal from "../components/EditPatientModal";
 import TransferModal from "../components/TransferModal";
 import AuditPanel from "../components/AuditPanel";
+import VitalsHistoryModal from "../components/VitalsHistoryModal";
 
 const badgeBase = {
     display: "inline-block",
@@ -31,6 +32,7 @@ function Dashboard({ user, onLogout }) {
     const [vitalsFor, setVitalsFor] = useState(null);
     const [editing, setEditing] = useState(null);
     const [transferFor, setTransferFor] = useState(null);
+    const [historyFor, setHistoryFor] = useState(null);
     const [showExport, setShowExport] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [search, setSearch] = useState("");
@@ -310,6 +312,7 @@ function Dashboard({ user, onLogout }) {
                                             )}
                                             <button className="btn-vitals" onClick={() => setEditing(p)}>Edit</button>
                                             <button className="btn-vitals" onClick={() => setVitalsFor(p)}>Record vitals</button>
+                                            <button className="btn-vitals" onClick={() => setHistoryFor(p)}>History</button>
                                             <span className={`sync-pill ${p.isSynced ? "synced" : "pending"}`}>
                                                 {p.isSynced ? "Synced" : "Waiting to sync"}
                                             </span>
@@ -339,6 +342,7 @@ function Dashboard({ user, onLogout }) {
                     onDone={handleTransferDone}
                 />
             )}
+            {historyFor && <VitalsHistoryModal patient={historyFor} onClose={() => setHistoryFor(null)} />}
             {showExport && (
                 <div className="modal-backdrop" onClick={() => setShowExport(false)}>
                     <div className="modal" onClick={(e) => e.stopPropagation()}>
