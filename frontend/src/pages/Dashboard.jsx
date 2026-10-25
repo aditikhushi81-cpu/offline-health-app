@@ -281,6 +281,11 @@ function Dashboard({ user, onLogout }) {
                                                     {p.phone ? ` · ${p.phone}` : ""}
                                                 </span>
                                                 <span>Doctor: {doctorName(p.assignedDoctorId)}</span>
+                                                {user.role === "doctor" && p.createdByName && (
+                                                    <span style={{ textTransform: "none" }}>
+                                                        Added by {p.createdByName} · updated {new Date(p.updatedAt).toLocaleString()}
+                                                    </span>
+                                                )}
                                                 {latestVitals(p.id) && (
                                                     <span className="vitals-line">
                                                         {latestVitals(p.id).bloodPressure && `BP ${latestVitals(p.id).bloodPressure}`}

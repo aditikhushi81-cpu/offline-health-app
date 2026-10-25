@@ -321,7 +321,8 @@ module.exports = function (pool) {
     router.get("/pull", requireAuth, async (req, res) => {
         try {
             const cols = `id, name, dob, gender, phone, created_by, assigned_doctor_id,
-                          created_at, updated_at, verification_status, verified_by, verified_at`;
+                          created_at, updated_at, verification_status, verified_by, verified_at,
+                          (SELECT name FROM users WHERE users.id = patients.created_by) AS created_by_name`;
             let patientsResult;
 
             if (req.user.role === "admin") {

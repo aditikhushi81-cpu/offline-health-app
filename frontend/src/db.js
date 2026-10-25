@@ -261,6 +261,7 @@ export async function pullNow() {
                     verifiedBy: p.verified_by || null,
                     verifiedAt: p.verified_at || null,
                     assignedDoctorId: p.assigned_doctor_id || null,
+                    createdByName: p.created_by_name || "",
                 });
             }
             for (const v of vitals) {
