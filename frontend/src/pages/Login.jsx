@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import AuthLayout from "../components/AuthLayout";
 
-function Login({ onSwitch, onAuth, onForgot }) {
+function Login({ onSwitch, onAuth, onForgot, onResend }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -114,7 +114,13 @@ function Login({ onSwitch, onAuth, onForgot }) {
                 Patient data is sensitive. By signing in you agree to handle
                 records responsibly and only with patient consent.
             </p>
-            {error && <div className="error-box">{error}</div>}
+                        {error && <div className="error-box">{error}</div>}
+            <p className="switch-text" style={{ fontSize: "0.9rem" }}>
+                Did not get the verification email?{" "}
+                <button type="button" className="link-btn" onClick={onResend}>
+                    Resend it
+                </button>
+            </p>
         </AuthLayout>
     );
 }

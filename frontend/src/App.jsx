@@ -4,18 +4,24 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import VerifyEmail from "./pages/VerifyEmail";
+import ResendVerification from "./pages/ResendVerification";
 import Dashboard from "./pages/Dashboard";
 
-// Read ?reset=TOKEN from the link in the email, once, then clean the address bar
-function readResetToken() {
-  const token = new URLSearchParams(window.location.search).get("reset");
-  if (token) window.history.replaceState({}, "", window.location.pathname);
-  return token;
+// Reads ?reset=TOKEN or ?verify=TOKEN from an email link, once, then cleans the address bar
+function readLinkToken() {
+  const params = new URLSearchParams(window.location.search);
+  const reset = params.get("reset");
+  const verify = params.get("verify");
+  if (reset || verify) window.history.replaceState({}, "", window.location.pathname);
+  if (reset) return { kind: "reset", token: reset };
+  if (verify) return { kind: "verify", token: verify };
+  return null;
 }
 
 function App() {
-  const [resetToken] = useState(readResetToken);
-  const [page, setPage] = useState(resetToken ? "reset" : "login");
+  const [link] = useState(readLinkToken);
+  const [page, setPage] = useState(link ? link.kind : "login");
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("user"));
@@ -31,22 +37,27 @@ function App() {
     setPage("login");
   };
 
-  // The reset screen is shown even if someone is logged in on this device
-  if (page === "reset" && resetToken) {
-    return <ResetPassword token={resetToken} onDone={() => setPage("login")} />;
+  // Email-link screens are shown even if someone is logged in on this device
+  if (page === "reset" && link) {
+    return <ResetPassword token={link.token} onDone={() => setPage("login")} />;
+  }
+  if (page === "verify" && link) {
+    return <VerifyEmail token={link.token} onDone={() => setPage("login")} />;
   }
 
   if (user) {
     return <Dashboard user={user} onLogout={handleLogout} />;
   }
 
-  if (page === "register") return <Register onSwitch={() => setPage("login")} onAuth={setUser} />;
+  if (page === "register") return <Register onSwitch={() => setPage("login")} />;
   if (page === "forgot") return <ForgotPassword onBack={() => setPage("login")} />;
+  if (page === "resend") return <ResendVerification onBack={() => setPage("login")} />;
 
   return (
     <Login
       onSwitch={() => setPage("register")}
       onForgot={() => setPage("forgot")}
+      onResend={() => setPage("resend")}
       onAuth={setUser}
     />
   );

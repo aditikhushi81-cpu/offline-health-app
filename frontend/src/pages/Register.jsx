@@ -2,17 +2,17 @@ import { useState } from "react";
 import AuthLayout from "../components/AuthLayout";
 import { apiPost } from "../api";
 
-function Register({ onSwitch, onAuth }) {
+function Register({ onSwitch }) {
     const [form, setForm] = useState({
         name: "",
         email: "",
-        role: "nurse",
         password: "",
         confirm: "",
     });
     const [agreed, setAgreed] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [sentTo, setSentTo] = useState("");
 
     const update = (field) => (e) =>
         setForm({ ...form, [field]: e.target.value });
@@ -36,21 +36,33 @@ function Register({ onSwitch, onAuth }) {
 
         setLoading(true);
         try {
-            const data = await apiPost("/auth/register", {
+            await apiPost("/auth/register", {
                 name: form.name,
                 email: form.email,
                 password: form.password,
-                role: form.role,
             });
-            localStorage.setItem("token", data.token);
-            localStorage.setItem("user", JSON.stringify(data.user));
-            onAuth(data.user);
+            setSentTo(form.email.trim());
         } catch (err) {
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
+
+    if (sentTo) {
+        return (
+            <AuthLayout>
+                <h1>Check your email</h1>
+                <p className="subtitle">
+                    We sent a verification link to <strong>{sentTo}</strong>. Click it to
+                    activate your account, then sign in. The link works once and expires in 24 hours.
+                </p>
+                <button type="button" className="btn-primary" onClick={onSwitch}>
+                    Go to sign in
+                </button>
+            </AuthLayout>
+        );
+    }
 
     return (
         <AuthLayout>
@@ -93,20 +105,6 @@ function Register({ onSwitch, onAuth }) {
                             placeholder="you@example.com"
                             required
                         />
-                    </div>
-                </div>
-
-                <div className="field">
-                    <label htmlFor="role">I am a</label>
-                    <div className="input-wrap">
-                        <svg className="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="7" width="18" height="13" rx="2" />
-                            <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M12 11v5M9.5 13.5h5" />
-                        </svg>
-                        <select id="role" value={form.role} onChange={update("role")}>
-                            <option value="nurse">Nurse / Health worker</option>
-                            <option value="doctor">Doctor</option>
-                        </select>
                     </div>
                 </div>
 
@@ -168,6 +166,9 @@ function Register({ onSwitch, onAuth }) {
                 <button type="button" className="link-btn" onClick={onSwitch}>
                     Sign in
                 </button>
+            </p>
+            <p className="switch-text" style={{ fontSize: "0.85rem" }}>
+                New accounts are created as nurse / health worker. Doctor access is granted by an administrator.
             </p>
         </AuthLayout>
     );
