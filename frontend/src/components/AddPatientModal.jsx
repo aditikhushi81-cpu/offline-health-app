@@ -1,18 +1,34 @@
-import { useState } from "react";
-import { addPatientLocal, findDuplicatePatient, syncNow } from "../db";
+import { useState, useEffect } from "react";
+import { addPatientLocal, findDuplicatePatient, getDoctorsLocal, syncNow } from "../db";
 import { validatePatient } from "../validation";
 
 function AddPatientModal({ user, onClose }) {
-    const [form, setForm] = useState({ name: "", dob: "", gender: "female", phone: "" });
+    const [form, setForm] = useState({ name: "", dob: "", gender: "female", phone: "", assignedDoctorId: "" });
+    const [doctors, setDoctors] = useState([]);
     const [error, setError] = useState("");
     const [fieldErrors, setFieldErrors] = useState({});
     const [duplicate, setDuplicate] = useState(null); // { existing, data }
     const [saving, setSaving] = useState(false);
 
+    // Load the cached doctor list (works offline) and pre-fill the default doctor
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            const { doctors: list, defaultDoctorId } = await getDoctorsLocal();
+            if (!active) return;
+            setDoctors(list);
+            let chosen = "";
+            if (user.role === "doctor") chosen = user.id; // a doctor adds patients to themselves by default
+            else if (defaultDoctorId && list.some((d) => d.id === defaultDoctorId)) chosen = defaultDoctorId;
+            else if (list.length === 1) chosen = list[0].id;
+            setForm((f) => ({ ...f, assignedDoctorId: f.assignedDoctorId || chosen }));
+        })();
+        return () => { active = false; };
+    }, [user.id, user.role]);
+
     const update = (field) => (e) => {
         setForm({ ...form, [field]: e.target.value });
         if (fieldErrors[field]) setFieldErrors({ ...fieldErrors, [field]: "" });
-        // Any edit cancels a pending duplicate warning so it gets re-checked
         if (duplicate) setDuplicate(null);
     };
 
@@ -41,6 +57,7 @@ function AddPatientModal({ user, onClose }) {
         };
 
         const errors = validatePatient(cleaned);
+        if (!cleaned.assignedDoctorId) errors.assignedDoctorId = "Please choose a doctor.";
         setFieldErrors(errors);
         if (Object.keys(errors).length > 0) return;
 
@@ -51,7 +68,6 @@ function AddPatientModal({ user, onClose }) {
                 return;
             }
         } catch (err) {
-            // If the check itself fails, do not block saving
             console.error("Duplicate check failed:", err);
         }
 
@@ -115,6 +131,22 @@ function AddPatientModal({ user, onClose }) {
                             <input id="p-phone" className="plain" type="tel" inputMode="numeric" maxLength={10} value={form.phone} onChange={update("phone")} placeholder="e.g. 9876543210" />
                         </div>
                         {fieldErrors.phone && <div style={errStyle}>{fieldErrors.phone}</div>}
+                    </div>
+
+                    <div className="field">
+                        <label htmlFor="p-doctor">Assigned doctor</label>
+                        <div className="input-wrap">
+                            <select id="p-doctor" className="plain" value={form.assignedDoctorId} onChange={update("assignedDoctorId")}>
+                                <option value="">Select a doctor</option>
+                                {doctors.map((d) => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        {doctors.length === 0 && (
+                            <div style={errStyle}>Doctor list not downloaded yet. Connect once to load it.</div>
+                        )}
+                        {fieldErrors.assignedDoctorId && <div style={errStyle}>{fieldErrors.assignedDoctorId}</div>}
                     </div>
 
                     {duplicate && (

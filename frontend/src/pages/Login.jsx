@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import AuthLayout from "../components/AuthLayout";
 
-function Login({ onSwitch, onAuth }) {
+function Login({ onSwitch, onAuth, onForgot }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -87,6 +87,16 @@ function Login({ onSwitch, onAuth }) {
                             </svg>
                         </button>
                     </div>
+                </div>
+
+                <div style={{ textAlign: "right", margin: "-4px 0 12px" }}>
+                    <button
+                        type="button"
+                        onClick={onForgot}
+                        style={{ background: "none", border: "none", color: "#0f766e", cursor: "pointer", fontSize: "0.9rem", padding: 0 }}
+                    >
+                        Forgot password?
+                    </button>
                 </div>
 
                 <button type="submit" className="btn-primary" disabled={loading}>

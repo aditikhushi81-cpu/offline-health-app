@@ -7,6 +7,7 @@ import { db, syncNow, pullNow, checkServer, verifyPatientRemote } from "../db";
 import useConnection from "../useConnection";
 import VitalsModal from "../components/VitalsModal";
 import EditPatientModal from "../components/EditPatientModal";
+import TransferModal from "../components/TransferModal";
 import AuditPanel from "../components/AuditPanel";
 
 const badgeBase = {
@@ -28,6 +29,7 @@ function Dashboard({ user, onLogout }) {
     const [showAdd, setShowAdd] = useState(false);
     const [vitalsFor, setVitalsFor] = useState(null);
     const [editing, setEditing] = useState(null);
+    const [transferFor, setTransferFor] = useState(null);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
     const [verifyingId, setVerifyingId] = useState(null);
@@ -37,7 +39,14 @@ function Dashboard({ user, onLogout }) {
     const vitalsList = useLiveQuery(() => db.vitals.orderBy("recordedAt").reverse().toArray(), []) || [];
     const latestVitals = (patientId) => vitalsList.find((v) => v.patientId === patientId);
     const patients = useLiveQuery(() => db.patients.orderBy("updatedAt").reverse().toArray(), []) || [];
+    const doctorList = useLiveQuery(() => db.doctors.orderBy("name").toArray(), []) || [];
     const pending = useLiveQuery(() => db.syncOutbox.count(), []) || 0;
+
+    const doctorName = (id) => {
+        if (!id) return "Not assigned";
+        const d = doctorList.find((x) => x.id === id);
+        return d ? d.name : "Unknown doctor";
+    };
 
     const ageOf = (dob) => {
         const years = Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000);
@@ -95,13 +104,20 @@ function Dashboard({ user, onLogout }) {
         setVerifyingId(patient.id);
         const result = await verifyPatientRemote(patient.id);
         if (result.ok) {
-            await pullNow(); // brings the new Verified status into this device
-            setAuditKey((k) => k + 1); // reloads Recent activity
+            await pullNow();
+            setAuditKey((k) => k + 1);
             setVerifyMsg(`${patient.name} marked as verified.`);
         } else {
             setVerifyMsg(result.message);
         }
         setVerifyingId(null);
+    };
+
+    const handleTransferDone = async (message) => {
+        setTransferFor(null);
+        await pullNow(); // the patient is no longer sent to this doctor, so it disappears locally
+        setAuditKey((k) => k + 1);
+        setVerifyMsg(message);
     };
 
     const roleLabel = user.role === "doctor" ? "Doctor" : "Nurse / Health worker";
@@ -139,7 +155,7 @@ function Dashboard({ user, onLogout }) {
                         <h1>Hello, {user.name.split(" ")[0]}</h1>
                         <p>
                             {user.role === "doctor"
-                                ? "Showing patients from all health workers."
+                                ? "Showing patients assigned to you."
                                 : "Here's an overview of your patient records."}
                         </p>
                     </div>
@@ -211,8 +227,9 @@ function Dashboard({ user, onLogout }) {
                             <ul className="patient-list">
                                 {visiblePatients.map((p) => {
                                     const isVerified = p.verificationStatus === "verified";
-                                    const canVerify =
-                                        user.role === "doctor" && !isVerified && p.isSynced;
+                                    const isMine = user.role === "doctor" && p.assignedDoctorId === user.id;
+                                    const canVerify = isMine && !isVerified && p.isSynced;
+                                    const canTransfer = isMine && p.isSynced;
                                     return (
                                         <li key={p.id} className="patient-row">
                                             <div className="avatar small">{p.name.charAt(0).toUpperCase()}</div>
@@ -234,6 +251,7 @@ function Dashboard({ user, onLogout }) {
                                                     {ageOf(p.dob)} yrs · {p.gender}
                                                     {p.phone ? ` · ${p.phone}` : ""}
                                                 </span>
+                                                <span>Doctor: {doctorName(p.assignedDoctorId)}</span>
                                                 {latestVitals(p.id) && (
                                                     <span className="vitals-line">
                                                         {latestVitals(p.id).bloodPressure && `BP ${latestVitals(p.id).bloodPressure}`}
@@ -251,6 +269,16 @@ function Dashboard({ user, onLogout }) {
                                                     title={isOnline ? "Mark as verified after checking in person or against an ID" : "Needs an internet connection"}
                                                 >
                                                     {verifyingId === p.id ? "Verifying..." : "Mark verified"}
+                                                </button>
+                                            )}
+                                            {canTransfer && (
+                                                <button
+                                                    className="btn-vitals"
+                                                    onClick={() => setTransferFor(p)}
+                                                    disabled={!isOnline}
+                                                    title={isOnline ? "Transfer to another doctor" : "Needs an internet connection"}
+                                                >
+                                                    Transfer
                                                 </button>
                                             )}
                                             <button className="btn-vitals" onClick={() => setEditing(p)}>Edit</button>
@@ -275,6 +303,15 @@ function Dashboard({ user, onLogout }) {
             {showAdd && <AddPatientModal user={user} onClose={() => setShowAdd(false)} />}
             {vitalsFor && <VitalsModal patient={vitalsFor} user={user} onClose={() => setVitalsFor(null)} />}
             {editing && <EditPatientModal patient={editing} onClose={() => setEditing(null)} />}
+            {transferFor && (
+                <TransferModal
+                    patient={transferFor}
+                    doctors={doctorList}
+                    currentDoctorId={user.id}
+                    onClose={() => setTransferFor(null)}
+                    onDone={handleTransferDone}
+                />
+            )}
         </div>
     );
 }

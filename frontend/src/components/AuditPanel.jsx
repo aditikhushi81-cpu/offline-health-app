@@ -4,6 +4,7 @@ const ACTION_LABELS = {
   create: "registered",
   update: "edited",
   verify: "verified",
+  transfer: "transferred",
 };
 
 function AuditPanel({ refreshKey = 0 }) {

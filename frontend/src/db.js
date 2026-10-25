@@ -23,6 +23,15 @@ db.version(2)
             if (p.verifiedAt === undefined) p.verifiedAt = null;
         })
     );
+// Version 3: caches the doctor list and the logged-in user's default doctor
+// so the doctor dropdown works offline.
+db.version(3).stores({
+    patients: "id, name, updatedAt, isSynced",
+    vitals: "id, patientId, recordedAt, isSynced",
+    syncOutbox: "id, createdAt, type",
+    doctors: "id, name",
+    meta: "key",
+});
 
 // Turns a date from the server (like "1990-05-09T18:30:00.000Z") into the correct
 // local calendar day "YYYY-MM-DD". Plain "YYYY-MM-DD" values are returned unchanged.
@@ -53,6 +62,8 @@ export async function addPatientLocal(data, userId) {
         verificationStatus: "unverified",
         verifiedBy: null,
         verifiedAt: null,
+        assignedDoctorId: data.assignedDoctorId || null,
+
     };
 
     await db.transaction("rw", db.patients, db.syncOutbox, async () => {
@@ -220,8 +231,16 @@ export async function pullNow() {
             headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return;
-        const { patients, vitals } = await res.json();
+        const { patients, vitals, doctors, defaultDoctorId } = await res.json();
 
+        // Cache the doctor list and default doctor for offline use
+        if (Array.isArray(doctors)) {
+            await db.transaction("rw", db.doctors, db.meta, async () => {
+                await db.doctors.clear();
+                await db.doctors.bulkPut(doctors);
+                await db.meta.put({ key: "defaultDoctorId", value: defaultDoctorId || null });
+            });
+        }
         // Anything still waiting in the outbox is newer than the server copy: don't overwrite it
         const pendingIds = new Set((await db.syncOutbox.toArray()).map((t) => t.payload.id));
 
@@ -241,6 +260,7 @@ export async function pullNow() {
                     verificationStatus: p.verification_status || "unverified",
                     verifiedBy: p.verified_by || null,
                     verifiedAt: p.verified_at || null,
+                    assignedDoctorId: p.assigned_doctor_id || null,
                 });
             }
             for (const v of vitals) {
@@ -259,9 +279,50 @@ export async function pullNow() {
                     isSynced: true,
                 });
             }
+            // Remove synced local records that the server no longer sends to this user
+            const serverPatientIds = new Set(patients.map((p) => p.id));
+            const serverVitalIds = new Set(vitals.map((v) => v.id));
+
+            const localPatients = await db.patients.toArray();
+            for (const lp of localPatients) {
+                if (lp.isSynced && !serverPatientIds.has(lp.id) && !pendingIds.has(lp.id)) {
+                    await db.patients.delete(lp.id);
+                }
+            }
+            const localVitals = await db.vitals.toArray();
+            for (const lv of localVitals) {
+                if (lv.isSynced && !serverVitalIds.has(lv.id) && !pendingIds.has(lv.id)) {
+                    await db.vitals.delete(lv.id);
+                }
+            }
         });
     } catch (err) {
         console.warn("Pull failed, will retry:", err.message);
+    }
+}
+
+// Reads the cached doctor list and default doctor (works offline).
+export async function getDoctorsLocal() {
+    const doctors = await db.doctors.orderBy("name").toArray();
+    const meta = await db.meta.get("defaultDoctorId");
+    return { doctors, defaultDoctorId: meta ? meta.value : null };
+}
+
+// Asks the server to move a patient to another doctor (needs internet).
+export async function transferPatientRemote(id, doctorId) {
+    const token = localStorage.getItem("token");
+    if (!token) return { ok: false, message: "Please log in again." };
+    try {
+        const res = await fetch(`${API_URL}/sync/patients/${id}/transfer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ doctorId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, message: data.message || "Could not transfer the patient." };
+        return { ok: true, doctorName: data.doctorName };
+    } catch {
+        return { ok: false, message: "Transfer needs an internet connection." };
     }
 }
 
