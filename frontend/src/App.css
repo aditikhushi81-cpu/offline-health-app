@@ -840,3 +840,142 @@
   color: #64748b;
   font-size: 14px;
 }
+
+/* ---------- Phone polish ---------- */
+
+/* Bigger tap targets everywhere (44px is the usual minimum) */
+.btn-primary,
+.btn-secondary,
+.btn-add,
+.btn-sync,
+.btn-logout,
+.btn-vitals,
+.pill,
+.modal-x {
+  min-height: 44px;
+}
+
+.btn-vitals,
+.btn-sync,
+.btn-logout,
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 16px inputs stop iPhones from zooming in when you tap a field */
+.input-wrap input,
+.input-wrap select,
+.input-wrap input.plain,
+.search-input,
+.plain-area {
+  font-size: 16px;
+}
+
+@media (max-width: 700px) {
+  .dash-main {
+    padding: 20px 14px;
+  }
+
+  .dash-header {
+    padding: 10px 14px;
+  }
+
+  .dash-right {
+    gap: 10px;
+  }
+
+  /* Title and buttons stack, buttons fill the width */
+  .dash-title {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dash-title h1 {
+    font-size: 24px;
+  }
+
+  .dash-title > div:last-child {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .dash-title .btn-secondary,
+  .dash-title .btn-add {
+    width: 100%;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  /* Search on its own line, filters below */
+  .search-input {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .filter-pills {
+    flex-wrap: wrap;
+  }
+
+  /* Patient row: name on top, buttons wrap below */
+  .patient-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 0;
+  }
+
+  .patient-info {
+    flex: 1 1 calc(100% - 60px);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .patient-row .btn-vitals {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .patient-row .sync-pill {
+    margin-left: auto;
+  }
+
+  /* Modals: full width, single-column fields, stacked buttons */
+  .modal {
+    max-width: 100%;
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  .row-2 {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions .btn-primary,
+  .modal-actions .btn-secondary {
+    width: 100%;
+  }
+
+  /* Login and register */
+  .form-panel {
+    padding: 20px 16px;
+    align-items: flex-start;
+    padding-top: 64px;
+  }
+
+  .form-card h1 {
+    font-size: 26px;
+  }
+}
