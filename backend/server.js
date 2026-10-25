@@ -8,7 +8,16 @@ const auditRoutes = require("./audit-routes");
 
 const app = express();
 
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:4173"] }));
+// Allowed websites. FRONTEND_URL can hold one or more addresses separated by commas.
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter(Boolean),
+];
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -30,5 +39,5 @@ app.get("/api/health", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

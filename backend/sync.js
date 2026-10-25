@@ -320,7 +320,7 @@ module.exports = function (pool) {
     // Admin: everyone. Also returns the doctor list and the nurse's default doctor.
     router.get("/pull", requireAuth, async (req, res) => {
         try {
-            const cols = `id, name, dob, gender, phone, created_by, assigned_doctor_id,
+            const cols = `id, name, to_char(dob, 'YYYY-MM-DD') AS dob, gender, phone, created_by, assigned_doctor_id,
                           created_at, updated_at, verification_status, verified_by, verified_at,
                           (SELECT name FROM users WHERE users.id = patients.created_by) AS created_by_name`;
             let patientsResult;

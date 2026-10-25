@@ -144,7 +144,7 @@ export async function updatePatientLocal(id, changes) {
     });
 }
 
-const API_URL = "http://localhost:5000/api";
+import { API_URL } from "./config";
 let syncing = false;
 
 // Sends all queued patients to the server. Returns how many were synced.
